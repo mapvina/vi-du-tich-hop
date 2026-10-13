@@ -1,0 +1,240 @@
+<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hướng dẫn Mapvina JavaScript thuần</title><style>body{max-width:960px;margin:auto;padding:28px;font:18px/1.65 system-ui;color:#172d45}img{max-width:100%;height:auto}pre{overflow:auto;background:#f3f5f7;padding:18px}.intro-box,.cta-section{background:#eff7f4;padding:20px;margin:20px 0}.table-responsive{overflow:auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd6dd;padding:10px}</style><body><h1>Hướng dẫn tích hợp tìm kiếm địa chỉ tiếng Việt bằng Mapvina và JavaScript thuần</h1><div class="intro-box"><p>Một ô địa chỉ tốt không nên bắt khách hàng nhập riêng số nhà, tên đường, phường, tỉnh rồi vẫn phải chờ nhân viên gọi lại xác nhận. Cách dễ dùng hơn là để khách gõ vài chữ, chọn một gợi ý và nhận ngay địa chỉ đầy đủ cùng tọa độ.</p></div>
+
+<p>Trong hướng dẫn này, chúng ta sẽ làm đúng luồng đó bằng <strong>một file HTML duy nhất</strong>. Không cần Node.js, npm, framework hay bước build. File mẫu đã có HTML, CSS, JavaScript và <code>public_key</code>, vì vậy có thể tải về rồi mở để thử ngay. Sau khi hiểu cách hoạt động, bạn chỉ cần chép ba phần tương ứng vào website của mình.</p>
+
+<p>Demo sử dụng hai API của Mapvina: Autocomplete để lấy danh sách gợi ý trong lúc người dùng gõ và Place Detail để lấy thông tin đầy đủ sau khi họ chọn một địa điểm.<a href="#source-1">[1]</a><a href="#source-2">[2]</a></p>
+
+<h2>Chạy thử trước khi đọc code</h2>
+
+<p>Trong gói mã nguồn, mở file <code>index.html</code> bằng Chrome hoặc Chromium. Gõ thử <code>Landmark 81</code>, <code>Nguyễn Huệ</code> hoặc một địa chỉ bạn thường dùng. Sau khoảng 350 mili giây, danh sách gợi ý sẽ xuất hiện. Bấm vào một kết quả để xem địa chỉ, Place ID và tọa độ.</p>
+
+<p>Nếu trình duyệt không cho gọi API khi mở file trực tiếp bằng <code>file://</code>, hãy mở terminal tại thư mục vừa giải nén và chạy một web server tĩnh:</p>
+
+<pre><code>python3 -m http.server 8080</code></pre>
+
+<p>Sau đó truy cập <code>http://127.0.0.1:8080</code>. Python ở đây chỉ dùng để phục vụ file tĩnh trên máy; demo vẫn là JavaScript chạy hoàn toàn trong trình duyệt, không có backend Node.js.</p>
+
+<p><code>public_key</code> có sẵn giúp người đọc thử nhanh nhưng có hạn mức. Khi đưa chức năng này lên website thật, hãy dùng key phù hợp với tài khoản của bạn và thiết lập giới hạn domain.</p>
+
+<h2>Đăng ký và kiểm tra API key</h2>
+
+<h3>1. Tạo tài khoản Mapvina</h3>
+
+<p>Mở <a href="https://account.mapvina.com/signup" target="_blank" rel="noopener noreferrer">trang đăng ký Mapvina</a>. Bạn có thể đăng nhập bằng Google hoặc điền email, họ tên, mật khẩu và số điện thoại theo biểu mẫu.<a href="#source-3">[3]</a></p>
+
+<p><img src="images/01-dang-ky.png" alt="Trang đăng ký Mapvina" class="img-fluid" loading="lazy"></p>
+
+<p>Sau khi tạo tài khoản, đăng nhập vào trang quản lý. Bạn không cần hoàn thành bước này để thử file với <code>public_key</code>, nhưng sẽ cần tài khoản và key riêng nếu muốn dùng tính năng trên website của doanh nghiệp.</p>
+
+<h3>2. Mở phần Quản lý Key</h3>
+
+<p>Vào mục “Quản lý Key” hoặc mở trực tiếp <a href="https://account.mapvina.com/tokens" target="_blank" rel="noopener noreferrer">trang quản lý key</a>. Giao diện hiển thị key, ngày hết hạn, trạng thái và các thao tác kiểm tra, bảo mật hoặc khóa key.<a href="#source-4">[4]</a></p>
+
+<p><img src="images/02-quan-ly-key.png" alt="Quản lý Key Mapvina" class="img-fluid" loading="lazy"></p>
+
+<p>Không chụp ảnh hoặc đưa key thật vào GitHub. Trong dự án JavaScript chạy ở trình duyệt, key frontend luôn có thể được người dùng xem qua DevTools. Vì thế không đặt private key hay server key vào file HTML. Cách bảo vệ phù hợp ở đây là dùng key dành cho frontend, giới hạn domain được phép gọi và theo dõi hạn mức.</p>
+
+<h3>3. Giới hạn domain được phép dùng key</h3>
+
+<p>Bấm “Bảo mật” tại key muốn cấu hình. Giao diện có các nhóm Whitelist domain, Whitelist Wildcard Domain, Whitelist IP và <code>T-BUNDLE-ID</code>.<a href="#source-4">[4]</a></p>
+
+<p><img src="images/03-bao-mat-key.png" alt="Cấu hình bảo mật key Mapvina" class="img-fluid" loading="lazy"></p>
+
+<p>Với demo gọi trực tiếp từ trình duyệt, domain website là phần cần quan tâm. Hãy thêm đúng hostname sẽ chạy ứng dụng, lưu cấu hình rồi thử cả từ domain hợp lệ và một nguồn không nằm trong danh sách. Đừng sao chép domain minh họa trong ảnh.</p>
+
+<p>Nếu website có nhiều môi trường như production, staging và trang thử nghiệm, hãy liệt kê chúng có chủ đích. Không nên để key hoàn toàn không giới hạn chỉ vì cấu hình whitelist chưa thuận tiện.</p>
+
+<h2>File <code>index.html</code> gồm những gì?</h2>
+
+<p>Mẫu được gói trong một file để người mới có thể đọc từ trên xuống dưới:</p>
+
+<pre><code>index.html
+├── phần &lt;style&gt;: giao diện ô tìm kiếm và danh sách gợi ý
+├── phần &lt;body&gt;: input, trạng thái, danh sách và kết quả đã chọn
+└── phần &lt;script&gt;: gọi Autocomplete và Place Detail</code></pre>
+
+<p>Khi đưa vào dự án thật, bạn có thể tách CSS sang <code>style.css</code> và JavaScript sang <code>app.js</code>. Việc để chung một file chỉ nhằm giúp chạy thử nhanh; nó không bắt buộc bạn phải giữ cấu trúc đó.</p>
+
+<p>Trong phần HTML, các phần tử chính là:</p>
+
+<pre><code>&lt;input id=&quot;address&quot; type=&quot;search&quot; autocomplete=&quot;off&quot;&gt;
+&lt;p id=&quot;status&quot; role=&quot;status&quot; aria-live=&quot;polite&quot;&gt;&lt;/p&gt;
+&lt;ul id=&quot;suggestions&quot;&gt;&lt;/ul&gt;
+&lt;section id=&quot;selection&quot; hidden&gt;
+  &lt;dd id=&quot;selected-address&quot;&gt;&lt;/dd&gt;
+  &lt;dd id=&quot;selected-id&quot;&gt;&lt;/dd&gt;
+  &lt;dd id=&quot;selected-coordinates&quot;&gt;&lt;/dd&gt;
+&lt;/section&gt;</code></pre>
+
+<p><code>status</code> cho người dùng biết ứng dụng đang chờ, đang tìm hay gặp lỗi. <code>suggestions</code> chứa các nút gợi ý. <code>selection</code> chỉ hiện sau khi Place Detail trả về thông tin của địa điểm được chọn.</p>
+
+<h2>Gọi Autocomplete trực tiếp từ JavaScript</h2>
+
+<p>Mọi request trong demo đi qua hàm <code>api()</code>. Hàm này tạo URL đúng endpoint, thêm key và hai cờ địa chỉ hành chính:</p>
+
+<pre><code>async function api(path, signal) {
+  const local = new URL(path, &#x27;https://example.invalid&#x27;);
+  const endpoint = local.pathname === &#x27;/api/autocomplete&#x27;
+    ? &#x27;autocomplete&#x27;
+    : &#x27;details&#x27;;
+
+  const url = new URL(
+    `https://maps.mapvina.com/api/v2/place/${endpoint}/json`
+  );
+
+  url.search = local.search;
+  url.searchParams.set(&#x27;key&#x27;, &#x27;public_key&#x27;);
+  url.searchParams.set(&#x27;new_admin&#x27;, &#x27;true&#x27;);
+  url.searchParams.set(&#x27;include_old_admin&#x27;, &#x27;true&#x27;);
+
+  if (endpoint === &#x27;autocomplete&#x27;) {
+    url.searchParams.set(&#x27;size&#x27;, &#x27;5&#x27;);
+  }
+
+  const response = await fetch(url, { signal });
+  const data = await response.json();
+
+  if (!response.ok || ![&#x27;OK&#x27;, &#x27;ZERO_RESULTS&#x27;].includes(data.status)) {
+    throw new Error(data.error_message || &#x27;Không thể tải dữ liệu.&#x27;);
+  }
+
+  return data;
+}</code></pre>
+
+<p><code>new_admin=true</code> yêu cầu dữ liệu theo địa giới mới. <code>include_old_admin=true</code> yêu cầu trả thêm thông tin địa chỉ cũ khi có.<a href="#source-1">[1]</a> Không nên hiểu rằng mọi kết quả đều chắc chắn có đủ cả hai dạng địa chỉ.</p>
+
+<p>Khi người dùng gõ, demo không gọi API ngay theo từng phím. Nó chờ 350 mili giây:</p>
+
+<pre><code>input.addEventListener(&#x27;input&#x27;, () =&gt; {
+  const token = invalidate();
+  const query = input.value.trim();
+
+  if (query.length &lt; 3) {
+    status.textContent = &#x27;Nhập ít nhất 3 ký tự để tìm địa chỉ.&#x27;;
+    return;
+  }
+
+  status.textContent = &#x27;Đang chờ bạn nhập xong…&#x27;;
+  timer = setTimeout(() =&gt; search(query, token), 350);
+});</code></pre>
+
+<p>Cách chờ người dùng ngừng gõ được gọi là debounce. Nếu khách nhập một địa chỉ dài, ứng dụng không gửi request cho từng ký tự. Bạn có thể thay đổi 350 ms sau khi thử trên thiết bị và mạng thật, nhưng không nên bỏ debounce.</p>
+
+<p>Mẫu cũng chỉ bắt đầu tìm từ ba ký tự và giới hạn năm gợi ý. Đây là lựa chọn của giao diện demo, không phải giới hạn bắt buộc của Mapvina.</p>
+
+<h2>Tránh kết quả cũ ghi đè kết quả mới</h2>
+
+<p>Giả sử người dùng gõ “Nguyễn”, request thứ nhất được gửi đi. Ngay sau đó họ gõ tiếp “Nguyễn Huệ”, request thứ hai được gửi. Nếu request thứ nhất về chậm hơn, một đoạn code đơn giản có thể hiển thị danh sách cũ lên trên kết quả mới.</p>
+
+<p>Demo giải quyết bằng hai lớp. <code>AbortController</code> hủy request đang chờ, còn biến <code>revision</code> đánh dấu phiên tìm kiếm hiện tại. Dù request cũ không hủy kịp, kết quả của nó cũng bị bỏ qua.</p>
+
+<pre><code>function invalidate() {
+  clearTimeout(timer);
+  controller?.abort();
+  revision += 1;
+  selection.hidden = true;
+  suggestions.replaceChildren();
+  return revision;
+}</code></pre>
+
+<p>Hủy request ở trình duyệt chủ yếu giúp giao diện không xử lý dữ liệu thừa. Nó không đảm bảo request chưa tới máy chủ hoặc không bị tính vào hạn mức, vì vậy debounce vẫn cần thiết.</p>
+
+<h2>Hiển thị gợi ý an toàn</h2>
+
+<p>Kết quả API không được ghép thẳng vào <code>innerHTML</code>. Demo tạo nút bằng DOM và đưa nội dung vào <code>textContent</code>:</p>
+
+<pre><code>for (const prediction of data.predictions) {
+  const item = document.createElement(&#x27;li&#x27;);
+  const button = document.createElement(&#x27;button&#x27;);
+
+  button.type = &#x27;button&#x27;;
+  button.textContent = prediction.description;
+  button.addEventListener(&#x27;click&#x27;, () =&gt; choose(prediction));
+
+  item.append(button);
+  suggestions.append(item);
+}</code></pre>
+
+<p>Mỗi gợi ý là một nút nên người dùng có thể dùng Tab và Enter để chọn. Phím Escape đóng danh sách. Một sản phẩm hoàn chỉnh có thể bổ sung điều hướng bằng phím mũi tên và mô hình ARIA combobox đầy đủ, nhưng cấu trúc này đã dễ tích hợp hơn một danh sách chỉ xử lý click.</p>
+
+<p>Không tự động chọn kết quả đầu tiên. Hai địa điểm có tên giống nhau có thể nằm ở tỉnh khác nhau; người dùng cần nhìn địa chỉ và tự xác nhận.</p>
+
+<h2>Lấy chi tiết sau khi người dùng chọn</h2>
+
+<p>Autocomplete phù hợp để hiển thị gợi ý nhanh, nhưng không nên coi dòng mô tả là toàn bộ dữ liệu địa chỉ. Khi người dùng chọn, demo lấy <code>place_id</code> rồi gọi Place Detail.<a href="#source-2">[2]</a></p>
+
+<pre><code>const data = await api(
+  `/api/details?${new URLSearchParams({
+    place_id: prediction.place_id
+  })}`,
+  request.signal
+);
+
+const place = data.result;
+const location = place.geometry?.location;
+
+selectedAddress.textContent =
+  place.formatted_address || place.name || prediction.description;
+
+selectedId.textContent = place.place_id;
+selectedCoordinates.textContent = location
+  ? `${location.lat}, ${location.lng}`
+  : &#x27;Không có tọa độ&#x27;;</code></pre>
+
+<p>Code dùng optional chaining vì response thực tế có thể thiếu một trường. Trước khi lưu đơn hàng, nên kiểm tra tọa độ có phải số hợp lệ hay không và địa chỉ có đủ cho nghiệp vụ của bạn hay không.</p>
+
+<p>Nếu người dùng chọn một địa điểm rồi sửa lại chữ trong ô tìm kiếm, <code>invalidate()</code> lập tức ẩn kết quả đã chọn. Điều này tránh lỗi văn bản đã đổi nhưng form vẫn giữ tọa độ cũ.</p>
+
+<p>Khi lưu dữ liệu, nên tách riêng chuỗi người dùng gõ, địa chỉ đã chọn, Place ID, tọa độ và ghi chú như số căn hộ, tầng hoặc cổng giao hàng. Không đưa tên khách, số điện thoại hoặc mã đơn vào truy vấn tìm địa chỉ nếu chúng không cần cho việc tìm kiếm.</p>
+
+<h2>Tích hợp vào website hiện có</h2>
+
+<p>Bạn không cần chép nguyên giao diện demo. Cách nhanh nhất là:</p>
+
+<ol><li>Chép input, vùng trạng thái, danh sách gợi ý và vùng kết quả vào form hiện tại.</li><li>Chép các quy tắc CSS cần thiết, rồi đổi màu sắc và khoảng cách theo giao diện website.</li><li>Chép JavaScript và sửa selector nếu ID của phần tử khác mẫu.</li><li>Đổi <code>public_key</code> thành key frontend của bạn.</li><li>Cấu hình whitelist domain trong tài khoản Mapvina.</li><li>Khi chọn xong, đưa <code>formatted_address</code>, <code>place_id</code>, <code>lat</code> và <code>lng</code> vào các trường ẩn của form hoặc state của ứng dụng.</li></ol>
+
+<p>Nếu website sử dụng React, Vue hay một framework khác, logic vẫn giống nhau: debounce input, hủy request cũ, render gợi ý, gọi Place Detail khi chọn và xóa selection nếu người dùng sửa chuỗi. File JavaScript thuần giúp nhìn rõ luồng trước khi chuyển nó thành component.</p>
+
+<h2>Tự kiểm tra trước khi đưa lên website thật</h2>
+
+<p>Hãy thử nhiều loại dữ liệu hơn một địa danh nổi tiếng:</p>
+
+<ul><li>địa chỉ có dấu và không dấu;</li><li>tên đường chưa nhập tỉnh/thành;</li><li>chung cư hoặc địa điểm có nhiều chi nhánh;</li><li>địa chỉ dùng tên hành chính cũ;</li><li>một từ khóa không có kết quả;</li><li>gõ nhanh rồi xóa;</li><li>chọn một địa chỉ rồi sửa văn bản;</li><li>mạng chậm hoặc bị ngắt giữa request.</li></ul>
+
+<p>Mở DevTools và xem tab Network. Bạn sẽ thấy trình duyệt gọi trực tiếp <code>maps.mapvina.com</code>. Đây cũng là lý do không được đặt private key trong mã frontend. Nếu gặp lỗi 429, đừng retry liên tục; hãy kiểm tra debounce, số lần component được khởi tạo và hạn mức key.</p>
+
+<p>Nếu endpoint trả HTTP thành công nhưng trường <code>status</code> báo lỗi, code vẫn phải coi lần gọi đó là không thành công. Demo đã kiểm tra cả HTTP status và application status.</p>
+
+<h2>Theo dõi hạn mức</h2>
+
+<p>Tại trang Quản lý Key, bấm “Kiểm tra” để mở bảng “Số lượng truy vấn còn lại”. Giao diện có các nhóm dịch vụ và cột Ngày, Tháng.<a href="#source-4">[4]</a></p>
+
+<p><img src="images/04-so-luong-truy-van.png" alt="Kiểm tra số lượng truy vấn còn lại" class="img-fluid" loading="lazy"></p>
+
+<p>Đây là số lượt còn lại, không phải biểu đồ lịch sử request theo từng ngày. Nếu cần thống kê chi tiết cho website, bạn có thể ghi nhận sự kiện ở lớp analytics của frontend hoặc tại backend hiện có của doanh nghiệp, nhưng không đưa key và địa chỉ đầy đủ vào log phân tích.</p>
+
+<p>Nếu lưu lượng tăng bất thường, trước hết hãy kiểm tra xem ô input có bị gắn sự kiện nhiều lần, trang có render lặp, request có retry vô hạn hay không. Sau đó mới đối chiếu với hạn mức tài khoản.</p>
+
+<h2>Trước khi dùng trong production</h2>
+
+<p>JavaScript thuần giúp tích hợp nhanh, nhưng cần hiểu giới hạn của cách gọi trực tiếp từ trình duyệt:</p>
+
+<ul><li>key frontend có thể được xem trong DevTools;</li><li>whitelist domain giúp hạn chế nguồn gọi nhưng không biến key thành bí mật;</li><li>cần debounce và giám sát để tránh tiêu thụ request ngoài ý muốn;</li><li>không gửi dữ liệu cá nhân không cần thiết vào truy vấn;</li><li>cần xử lý rõ trạng thái đang tải, không có kết quả và lỗi API;</li><li>nên có phương án đổi key mà không sửa nhiều vị trí trong code.</li></ul>
+
+<p>Nếu nghiệp vụ yêu cầu giấu hoàn toàn credential, áp dụng quota riêng theo người dùng hoặc kiểm soát request chặt hơn, lúc đó mới cân nhắc proxy qua backend. Với một website cần tích hợp nhanh bằng key frontend đã giới hạn domain, bản JavaScript thuần là điểm bắt đầu dễ hiểu và dễ ghép nhất.</p>
+
+<div class="cta-section"><h2>Kết luận</h2>
+
+<p>Luồng cốt lõi chỉ gồm hai request: Autocomplete khi người dùng gõ và Place Detail khi họ chọn. Phần quyết định trải nghiệm lại nằm ở những chi tiết xung quanh: chờ người dùng nhập xong, hủy request cũ, không hiển thị phản hồi lỗi thời, không giữ tọa độ sau khi văn bản đã thay đổi và cấu hình key đúng với môi trường chạy.</p>
+
+<p>Hãy mở <code>index.html</code>, thử bằng <code>public_key</code>, sau đó chép phần cần thiết vào form của bạn. Khi chuyển sang key riêng, giới hạn domain và kiểm tra hạn mức trước khi mở cho người dùng thật.</p>
+
+</div><h2>Nguồn tham khảo</h2>
+
+<p id="source-1">[1] <a href="https://docs.mapvina.com/api-integration/autocomplete/v2" target="_blank" rel="noopener noreferrer">https://docs.mapvina.com/api-integration/autocomplete/v2</a></p>
+
+<p id="source-2">[2] <a href="https://docs.mapvina.com/api-integration/place-detail/v2" target="_blank" rel="noopener noreferrer">https://docs.mapvina.com/api-integration/place-detail/v2</a></p>
+
+<p id="source-3">[3] <a href="https://account.mapvina.com/signup" target="_blank" rel="noopener noreferrer">https://account.mapvina.com/signup</a></p>
+
+<p id="source-4">[4] <a href="https://account.mapvina.com/tokens" target="_blank" rel="noopener noreferrer">https://account.mapvina.com/tokens</a></p></body></html>

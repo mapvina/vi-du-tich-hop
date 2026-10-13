@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tìm địa chỉ với Mapvina</title><style>*{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:#17243b;font:16px/1.6 system-ui,sans-serif}main{max-width:740px;margin:60px auto;padding:36px;background:#fff;border:1px solid #dce5ed;border-radius:20px;box-shadow:0 16px 50px #1623380a}.eyebrow{font-size:12px;letter-spacing:.14em;color:#087d72;font-weight:700}h1{font-size:38px;line-height:1.2;margin:12px 0}label{display:block;font-weight:650;margin:24px 0 8px}input{width:100%;padding:15px;border:1px solid #9aaebe;border-radius:10px;font:inherit}input:focus,button:focus-visible{outline:3px solid #28aa9870;outline-offset:2px}#status{font-size:14px;color:#4c6177;min-height:24px}ul{list-style:none;padding:0;margin:0}li+li{border-top:1px solid #e3eaf0}button{display:block;width:100%;border:0;text-align:left;background:#f4faf9;padding:14px;font:inherit;color:inherit;cursor:pointer}button:hover{background:#e5f4ef}section{margin-top:24px;background:#eef8f5;padding:20px;border-radius:12px}h2{font-size:19px;margin-top:0}dt{font-size:13px;color:#476473}dd{margin:0 0 12px;overflow-wrap:anywhere}aside{font-size:13px;color:#596779;border-top:1px solid #e1e8ee;padding-top:20px;margin-top:30px}@media(max-width:760px){main{margin:16px;padding:24px}h1{font-size:30px}}
+</style></head>
+<body><main><p class="eyebrow">MAPVINA · VANILLA JAVASCRIPT</p><h1>Tìm địa chỉ</h1><p>Nhập ít nhất 3 ký tự, chọn một gợi ý để xem thông tin địa chỉ.</p><label for="address">Địa chỉ cần tìm</label><input id="address" type="search" maxlength="200" autocomplete="off" placeholder="Ví dụ: Nguyễn Huệ, Hồ Chí Minh" aria-describedby="status"><p id="status" role="status" aria-live="polite">Sẵn sàng tìm kiếm.</p><ul id="suggestions" aria-label="Gợi ý địa chỉ"></ul><section id="selection" hidden aria-labelledby="selection-title"><h2 id="selection-title">Địa chỉ đã chọn</h2><dl><dt>Địa chỉ</dt><dd id="selected-address"></dd><dt>Place ID</dt><dd id="selected-id"></dd><dt>Tọa độ (lat, lng)</dt><dd id="selected-coordinates"></dd></dl></section><aside>Demo JavaScript thuần gọi trực tiếp API bằng public_key. Khi triển khai thật, hãy dùng key frontend của bạn và giới hạn domain trong phần quản lý key.</aside></main><script>const input = document.querySelector('#address');
+const suggestions = document.querySelector('#suggestions');
+const status = document.querySelector('#status');
+const selection = document.querySelector('#selection');
+let timer;
+let controller;
+let revision = 0;
+let selectedPlace = null;
+
+function invalidate() {
+  clearTimeout(timer);
+  controller?.abort();
+  revision += 1;
+  selectedPlace = null;
+  selection.hidden = true;
+  suggestions.replaceChildren();
+  return revision;
+}
+async function api(path, signal) {
+  const local = new URL(path, 'https://example.invalid');
+  const endpoint = local.pathname === '/api/autocomplete' ? 'autocomplete' : 'details';
+  const url = new URL(`https://maps.mapvina.com/api/v2/place/${endpoint}/json`);
+  url.search = local.search;
+  url.searchParams.set('key', 'public_key');
+  url.searchParams.set('new_admin', 'true');
+  url.searchParams.set('include_old_admin', 'true');
+  if (endpoint === 'autocomplete') url.searchParams.set('size', '5');
+  const response = await fetch(url, {signal});
+  const data = await response.json();
+  if (!response.ok || !['OK','ZERO_RESULTS'].includes(data.status)) {
+    throw new Error(data.error_message || 'Không thể tải dữ liệu. Public key có thể đã hết hạn mức; hãy thử lại sau.');
+  }
+  if (endpoint === 'autocomplete') return {predictions: data.predictions || []};
+  if (!data.result) throw new Error('Không tìm thấy thông tin chi tiết.');
+  return data;
+}
+function showError(error, token) {
+  if (token === revision && error.name !== 'AbortError') status.textContent = error.message;
+}
+async function choose(prediction) {
+  const token = invalidate();
+  input.value = prediction.description;
+  const request = controller = new AbortController();
+  status.textContent = 'Đang tải chi tiết địa chỉ…';
+  try {
+    const data = await api(`/api/details?${new URLSearchParams({ place_id: prediction.place_id })}`, request.signal);
+    if (token !== revision) return;
+    selectedPlace = data.result;
+    document.querySelector('#selected-address').textContent = selectedPlace.formatted_address || selectedPlace.name || prediction.description;
+    document.querySelector('#selected-id').textContent = selectedPlace.place_id;
+    const location = selectedPlace.geometry?.location;
+    document.querySelector('#selected-coordinates').textContent = location ? `${location.lat}, ${location.lng}` : 'Không có tọa độ';
+    selection.hidden = false;
+    status.textContent = 'Đã chọn địa chỉ. Sửa nội dung sẽ xóa lựa chọn này.';
+  } catch (error) { showError(error, token); }
+}
+async function search(query, token) {
+  if (token !== revision) return;
+  const request = controller = new AbortController();
+  status.textContent = 'Đang tìm địa chỉ…';
+  try {
+    const data = await api(`/api/autocomplete?${new URLSearchParams({ input: query })}`, request.signal);
+    if (token !== revision || input.value.trim() !== query) return;
+    suggestions.replaceChildren();
+    for (const prediction of data.predictions) {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = prediction.description;
+      button.addEventListener('click', () => choose(prediction));
+      item.append(button);
+      suggestions.append(item);
+    }
+    status.textContent = data.predictions.length ? `${data.predictions.length} gợi ý. Dùng Tab và Enter hoặc nhấp để chọn.` : 'Không tìm thấy địa chỉ phù hợp.';
+  } catch (error) { showError(error, token); }
+}
+input.addEventListener('input', () => {
+  const token = invalidate();
+  const query = input.value.trim();
+  if (query.length < 3) {
+    status.textContent = 'Nhập ít nhất 3 ký tự để tìm địa chỉ.';
+    return;
+  }
+  status.textContent = 'Đang chờ bạn nhập xong…';
+  timer = setTimeout(() => search(query, token), 350);
+});
+input.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    invalidate();
+    status.textContent = 'Đã đóng gợi ý. Nhập tiếp để tìm lại.';
+  }
+});
+</script></body></html>
